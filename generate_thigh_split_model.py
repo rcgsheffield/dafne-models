@@ -15,7 +15,10 @@
 #
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
+import os
 import shutil
+
+from common import generate_convert
 
 try:
     from dafne_dl import DynamicDLModel
@@ -411,34 +414,10 @@ def thigh_incremental_mem(modelObj: DynamicDLModel, trainingData: dict, training
     print('Done. Elapsed', time.time() - t)
 
 
-if len(sys.argv) > 1:
-    # convert an existing model
-    print("Converting model", sys.argv[1])
-    old_model_path = sys.argv[1]
-    filename = old_model_path
-    old_model = DynamicDLModel.Load(open(old_model_path, 'rb'))
-    shutil.move(old_model_path, old_model_path + '.bak')
-    weights = old_model.get_weights()
-    timestamp = old_model.timestamp_id
-    model_id = old_model.model_id
-else:
-    model_id = '210e2a21-1984-4e6f-8675-bf57bbabef2f'
-    timestamp = 1610001000
-    model = coscia_unet()
-    model.load_weights('weights/weights_coscia_split.hdf5')
-    weights = model.get_weights()
-    filename = f'models/Thigh_{timestamp}.model'
-
-modelObject = DynamicDLModel(model_id,
-                             coscia_unet,
-                             coscia_apply,
-                             incremental_learn_function=thigh_incremental_mem,
-                             weights=weights,
-                             timestamp_id=timestamp
-                             )
-
-
-with open(filename, 'wb') as f:
-    modelObject.dump(f)
-
-print('Saved', filename)
+generate_convert(model_id='210e2a21-1984-4e6f-8675-bf57bbabef2f',
+                 default_weights_path=os.path.join('weights', 'weights_coscia_split.hdf5'),
+                 model_name_prefix='Thigh',
+                 model_create_function=coscia_unet,
+                 model_apply_function=coscia_apply,
+                 model_learn_function=thigh_incremental_mem
+                 )
