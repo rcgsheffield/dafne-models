@@ -1,2 +1,3 @@
 numpy
 dafne-dl
+matplotlib

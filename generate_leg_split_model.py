@@ -242,12 +242,12 @@ def gamba_unet():
 def gamba_apply(modelObj: DynamicDLModel, data: dict):
     try:
         from dafne_dl.common.padorcut import padorcut
-        from dafne_dl.common import biascorrection
+        #from dafne_dl.common import biascorrection # redefined biascorrection locally to quickly deploy the model
         from dafne_dl.common.preprocess_train import split_mirror
         from dafne_dl.labels.leg import long_labels as LABELS_DICT
     except ModuleNotFoundError:
         from dl.common.padorcut import padorcut
-        from dl.common import biascorrection
+        #from dl.common import biascorrection # redefined biascorrection locally to quickly deploy the model
         from dl.common.preprocess_train import split_mirror
         from dl.labels.leg import long_labels as LABELS_DICT
 
@@ -256,6 +256,23 @@ def gamba_apply(modelObj: DynamicDLModel, data: dict):
         np
     except:
         import numpy as np
+
+    def biascorrection_image(image, levels=8):
+        import SimpleITK as sitk
+        MAX_GRAY_VALUE = 600
+
+        image = image * MAX_GRAY_VALUE / image.max()
+        image = sitk.GetImageFromArray(image)
+        image = sitk.Cast(image, sitk.sitkFloat32)
+
+        maskImage = sitk.OtsuThreshold(image, 0, 1, 200)
+        corrector = sitk.N4BiasFieldCorrectionImageFilter()
+        numberFittingLevels = levels
+        numberOfIteration = [50]
+        corrector.SetMaximumNumberOfIterations(numberOfIteration * numberFittingLevels)
+        output = corrector.Execute(image, maskImage)
+        img2 = sitk.GetArrayFromImage(output)
+        return img2
 
     MODEL_RESOLUTION = np.array([1.037037, 1.037037])
     MODEL_SIZE = (432, 432)
@@ -283,12 +300,15 @@ def gamba_apply(modelObj: DynamicDLModel, data: dict):
     originalShape = img.shape
     img = zoom(img, zoomFactor)  # resample the image to the model resolution
 
+
     if single_side:
         img = padorcut(img, MODEL_SIZE_SPLIT)
         if swap:
             img = img[::1, ::-1]
 
-        segmentation = netc.predict(np.expand_dims(np.stack([img, np.zeros(MODEL_SIZE_SPLIT)], axis=-1), axis=0))
+        imgbc = biascorrection_image(img)
+
+        segmentation = netc.predict(np.expand_dims(np.stack([imgbc, np.zeros(MODEL_SIZE_SPLIT)], axis=-1), axis=0))
         label = np.argmax(np.squeeze(segmentation[0, :, :, :13]), axis=2)
         if swap:
             label = label[::1, ::-1]
@@ -302,13 +322,12 @@ def gamba_apply(modelObj: DynamicDLModel, data: dict):
         if data['split_laterality']:
             suffix = '_L' if swap else '_R'
         for labelValue, labelName in LABELS_DICT.items():
-            outputLabels[labelName + suffix] = (labelsMask == labelValue).astype(
-                np.int8)  # left in the image is right in the anatomy
+            outputLabels[labelName + suffix] = (labelsMask == labelValue).astype(np.int8)  # left in the image is right in the anatomy
         return outputLabels
 
     # two sides
     img = padorcut(img, MODEL_SIZE)
-    imgbc = biascorrection.biascorrection_image(img)
+    imgbc = biascorrection_image(img)
     a1, a2, a3, a4, b1, b2 = split_mirror(imgbc)
     left = imgbc[int(b1):int(b2), int(a1):int(a2)]
     left = padorcut(left, MODEL_SIZE_SPLIT)
